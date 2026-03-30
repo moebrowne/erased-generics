@@ -17,6 +17,68 @@
 static zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, int type);
 
 /* -----------------------------------------------------------------------
+ * Helper: check if a character is valid in an identifier
+ * ----------------------------------------------------------------------- */
+static int is_identifier_char(char c)
+{
+    return isalnum((unsigned char)c) || c == '_';
+}
+
+/* -----------------------------------------------------------------------
+ * Helper: check if string at position starts with a generic type param
+ * (e.g., "T" or "TModel") and is followed by whitespace or specific chars
+ *
+ * Valid generic type parameters:
+ *  - Just "T"
+ *  - "T" followed by uppercase letters, digits, or underscores (e.g., "TModel", "TKey", "T1")
+ *
+ * Invalid (should not match):
+ *  - TypeError, Throwable, etc. (lowercase letters after T)
+ * ----------------------------------------------------------------------- */
+static int is_generic_type_param(const char *str, size_t pos, size_t len)
+{
+    /* Must start with 'T' */
+    if (pos >= len || str[pos] != 'T') {
+        return 0;
+    }
+
+    /* Make sure we're not in the middle of a longer identifier */
+    if (pos > 0 && is_identifier_char(str[pos - 1])) {
+        return 0;
+    }
+
+    /* Find the end of the identifier, but enforce generic naming convention */
+    size_t end = pos + 1;
+
+    /* If there's a second character and it's a lowercase letter, reject */
+    /* This catches TypeError, Throwable, Test, etc. */
+    if (end < len && is_identifier_char(str[end])) {
+        if (islower((unsigned char)str[end])) {
+            return 0;
+        }
+
+        /* After the first check, accept any identifier characters */
+        /* This allows TModel, TKey, TValue, etc. */
+        end++;
+        while (end < len && is_identifier_char(str[end])) {
+            end++;
+        }
+    }
+
+    /* Check if it's followed by a valid separator (whitespace, $, |, >, etc.) */
+    if (end < len) {
+        char next = str[end];
+        if (next != ' ' && next != '\t' && next != '\n' && next != '\r' &&
+            next != '$' && next != '|' && next != '>' && next != ',' &&
+            next != ')' && next != ';') {
+            return 0;
+        }
+    }
+
+    return end - pos;
+}
+
+/* -----------------------------------------------------------------------
  * strip_generics()
  *
  * Walks through the source string and removes generic type annotations
@@ -26,12 +88,13 @@ static zend_op_array *(*original_compile_file)(zend_file_handle *file_handle, in
  *   - Nested generics:  array<Map<string, Widget>>
  *   - Multiple params:  array<string, int>
  *   - Whitespace:       array < Widget >
+ *   - Generic type parameters: class Foo<T> { public T $x; } -> class Foo { public mixed $x; }
  *
  * Does NOT strip inside strings or comments to avoid false positives.
  * ----------------------------------------------------------------------- */
 static char *strip_generics(const char *source, size_t source_len, size_t *new_len)
 {
-    char *result = emalloc(source_len + 1);
+    char *result = emalloc(source_len * 2 + 1); /* Extra space for replacing T with mixed */
     size_t r = 0;
     size_t i = 0;
 
@@ -226,6 +289,108 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
                 }
                 /* The <...> block has been consumed and discarded */
                 continue;
+            }
+        }
+
+        /*
+         * ---- Detect standalone generic type parameters ----
+         *
+         * Look for type parameters like "T" or "TModel" that appear in type positions
+         * and replace them with "mixed".
+         *
+         * We detect this by looking for patterns like:
+         *   public T $var
+         *   private TModel $item
+         *   function foo(T $x)
+         *   function foo(): T
+         *
+         * IMPORTANT: We must NOT replace T when it's inside angle brackets (already handled above)
+         */
+        if (source[i] == 'T') {
+            int param_len = is_generic_type_param(source, i, source_len);
+            if (param_len > 0) {
+                /* Check if this looks like a type position by looking backwards */
+                size_t look_back = r;
+                while (look_back > 0 && (result[look_back - 1] == ' ' || result[look_back - 1] == '\t')) {
+                    look_back--;
+                }
+
+                /* Skip if we're inside angle brackets - this would be inside a generic type argument */
+                if (look_back > 0 && (result[look_back - 1] == '<' || result[look_back - 1] == ',')) {
+                    /* Don't replace - this is inside generic brackets which will be stripped anyway */
+                    result[r++] = source[i++];
+                    continue;
+                }
+
+                /* Check for type declaration contexts */
+                int is_type_context = 0;
+
+                /* Case 1: After visibility modifiers */
+                if (look_back >= 6 && strncmp(&result[look_back - 6], "public", 6) == 0) {
+                    is_type_context = 1;
+                }
+                if (look_back >= 7 && strncmp(&result[look_back - 7], "private", 7) == 0) {
+                    is_type_context = 1;
+                }
+                if (look_back >= 9 && strncmp(&result[look_back - 9], "protected", 9) == 0) {
+                    is_type_context = 1;
+                }
+
+                /* Case 2: After opening paren (function parameter) */
+                if (look_back > 0 && result[look_back - 1] == '(') {
+                    is_type_context = 1;
+                }
+
+                /* Case 3: After comma (might be another parameter, but not inside generics) */
+                /* We already checked for < and , above, so this is safe */
+
+                /* Case 4: After colon (return type) */
+                if (look_back > 0 && result[look_back - 1] == ':') {
+                    is_type_context = 1;
+                }
+
+                /* Case 5: After pipe (union type) - check ahead for |null pattern */
+                if (look_back > 0 && result[look_back - 1] == '|') {
+                    /* Check if this is T|null - if so, we need special handling */
+                    size_t ahead = i + param_len;
+                    while (ahead < source_len && (source[ahead] == ' ' || source[ahead] == '\t')) {
+                        ahead++;
+                    }
+
+                    /* If followed by |null, replace T with nothing (leaving just |null) */
+                    if (ahead < source_len && source[ahead] == '|') {
+                        /* Skip T entirely - the result will be something|null */
+                        i += param_len;
+                        continue;
+                    }
+
+                    is_type_context = 1;
+                }
+
+                if (is_type_context) {
+                    /* Check ahead to see if this is followed by |null */
+                    size_t ahead = i + param_len;
+                    while (ahead < source_len && (source[ahead] == ' ' || source[ahead] == '\t')) {
+                        ahead++;
+                    }
+
+                    if (ahead + 4 < source_len && source[ahead] == '|' &&
+                        strncmp(&source[ahead + 1], "null", 4) == 0) {
+                        /* T|null -> just null */
+                        const char *nullable = "null";
+                        memcpy(&result[r], nullable, 4);
+                        r += 4;
+                        i += param_len;
+                        continue;
+                    }
+
+                    /* Replace the generic type parameter with "mixed" */
+                    const char *mixed = "mixed";
+                    memcpy(&result[r], mixed, 5);
+                    r += 5;
+                    i += param_len;
+                    continue;
+                }
             }
         }
 

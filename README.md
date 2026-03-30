@@ -8,7 +8,7 @@ An experimental PHP extension which adds support for erased generics.
 - [x] Add some tests
 - [x] Add examples
 - [x] Support union types
-- [ ] Support generic `T` types
+- [x] Support generic `T` and `TSomething` types
 - [ ] Get it working with [PIE](https://github.com/php/pie)
 
 
@@ -128,11 +128,15 @@ function foo(?array<Widget> $items) {}
 ```
 
 
-### Not supported
+### Generic Type Parameters
+
+At runtime, `T` and `TSomething` are replaced with `mixed`
 
 ```php
-class Foo<T> {
-    public T $widgets;
+class Foo<TModel> {
+    public TModel $item;
+
+    public function foo(TModel $value): TModel {}
 }
 ```
 
