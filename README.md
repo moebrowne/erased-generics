@@ -9,7 +9,7 @@ An experimental PHP extension which adds support for erased generics.
 - [x] Add examples
 - [x] Support union types
 - [x] Support generic `T` and `TSomething` types
-- [ ] Get it working with [PIE](https://github.com/php/pie)
+- [x] Get it working with [PIE](https://github.com/php/pie)
 
 
 
