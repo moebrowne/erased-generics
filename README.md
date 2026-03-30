@@ -13,10 +13,38 @@ An experimental PHP extension which adds support for erased generics.
 
 
 
-## Examples
+## Install
 
-All the following are supported:
+```
+pie install moebrowne/erased-generics
+```
 
+<details>
+
+<summary>Compile Manually</summary>
+
+```
+make clean
+phpize --clean
+phpize
+./configure
+make
+sudo make install
+```
+
+</details>
+
+
+## How It Works
+
+The extension overrides the `zend_compile_file` function. This function is called each time PHP loads a file for
+compilation. The overridden function gets the raw source from disk and strips out generic type annotations then passing
+it back to the original `zend_compile_file` call.
+
+All native type declarations are kept, for example `array<Widget>` becomes `array`.
+
+
+## Supported Syntax
 
 ### Functions
 
@@ -33,17 +61,14 @@ function getData(): array<string, int> {}
 ```
 
 
-### Closures
+### Generic Type Parameters
 
 ```php
-// Closure parameters
-$process = function (array<Widget> $items) {};
-$map = function (Map<string, int> $data) {};
-$filter = fn (Collection<Widget> $widgets) => count($widgets);
+class Foo<TModel> {
+    public TModel $item;
 
-// Closure return types
-$closure = function(): array<Widget> {};
-$fn = fn(): array<string, int> => [];
+    public function foo(TModel $value): TModel {}
+}
 ```
 
 
@@ -76,16 +101,29 @@ class Foo {
 ```
 
 
+### Closures
+
+```php
+// Closure parameters
+$process = function (array<Widget> $items) {};
+$map = function (Map<string, int> $data) {};
+$filter = fn (Collection<Widget> $widgets) => count($widgets);
+
+// Closure return types
+$closure = function(): array<Widget> {};
+$fn = fn(): array<string, int> => [];
+```
+
+
 ### Nested Generics
 
 ```php
 function foo(array<Map<string, Widget>> $data) {}
-function foo(Collection<array<int>> $items) {}
 function getNestedData(): array<Map<string, Widget>> {}
 ```
 
 
-### Union Types
+### Unions
 
 ```php
 // Union types with generics
@@ -127,46 +165,3 @@ function foo(array<?Widget> $items) {}
 function foo(?array<Widget> $items) {}
 ```
 
-
-### Generic Type Parameters
-
-At runtime, `T` and `TSomething` are replaced with `mixed`
-
-```php
-class Foo<TModel> {
-    public TModel $item;
-
-    public function foo(TModel $value): TModel {}
-}
-```
-
-
-
-
-## How It Works
-
-The extension overrides the `zend_compile_file` function. This function is called each time PHP loads a file for
-compilation. The overridden function gets the raw source from disk and strips out generic type annotations then passing
-it back to the original `zend_compile_file` call.
-
-
-
-## Compile & Install
-
-```
-make clean
-phpize --clean
-phpize
-./configure
-make
-sudo make install
-```
-
-
-## Run
-
-As a one-off:
-
-```
-php -d extension=/path/to/erased-generics/modules/erased_generics.so -f file.php
-```
