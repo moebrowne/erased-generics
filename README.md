@@ -37,9 +37,9 @@ sudo make install
 
 ## How It Works
 
-The extension overrides the `zend_compile_file` function. This function is called each time PHP loads a file for
-compilation. The overridden function gets the raw source from disk and strips out generic type annotations then passing
-it back to the original `zend_compile_file` call.
+The extension overrides the `zend_compile_file` function which is called each time PHP loads a file for compilation. The
+overridden function reads the raw source from disk strips out generic type annotations then passes the modified source
+to the original `zend_compile_file` call.
 
 All native type declarations are kept, for example `array<Widget>` becomes `array`.
 
