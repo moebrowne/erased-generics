@@ -164,5 +164,5 @@ sudo make install
 As a one-off:
 
 ```
-php -d extension=/path/to/ext-generics/modules/erased_generics.so -f file.php
+php -d extension=/path/to/erased-generics/modules/erased_generics.so -f file.php
 ```
