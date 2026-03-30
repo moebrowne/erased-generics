@@ -1,0 +1,14 @@
+{
+    "name": "moebrowne/erased-generics",
+    "description": "Erased generics support for PHP",
+    "type": "php-ext",
+    "version": "0.1.0",
+    "require": {
+        "php": ">=8.1"
+    },
+    "extra": {
+        "php-ext": {
+            "extension-name": "erased_generics"
+        }
+    }
+}
