@@ -345,7 +345,7 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
                 /* We already checked for < and , above, so this is safe */
 
                 /* Case 4: After colon (return type) */
-                if (look_back > 0 && result[look_back - 1] == ':') {
+                if (look_back > 0 && result[look_back - 1] == ':' && result[look_back - 2] != ':') {
                     is_type_context = 1;
                 }
 
