@@ -92,9 +92,23 @@ static int is_generic_type_param(const char *str, size_t pos, size_t len)
  *
  * Does NOT strip inside strings or comments to avoid false positives.
  * ----------------------------------------------------------------------- */
+
+/* Macro to ensure buffer capacity before writing */
+#define ENSURE_CAPACITY(needed) \
+    do { \
+        if (r + (needed) >= result_capacity) { \
+            result_capacity *= 2; \
+            if (r + (needed) >= result_capacity) { \
+                result_capacity = r + (needed) + 1024; \
+            } \
+            result = erealloc(result, result_capacity); \
+        } \
+    } while(0)
+
 static char *strip_generics(const char *source, size_t source_len, size_t *new_len)
 {
-    char *result = emalloc(source_len * 2 + 1); /* Extra space for replacing T with mixed */
+    size_t result_capacity = source_len * 2 + 1; /* Extra space for replacing T with mixed */
+    char *result = emalloc(result_capacity);
     size_t r = 0;
     size_t i = 0;
 
@@ -119,24 +133,28 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
             /* If we found a valid identifier, treat this as heredoc/nowdoc */
             if (id_end > id_start) {
                 /* Copy <<< */
+                ENSURE_CAPACITY(3);
                 result[r++] = source[i++];
                 result[r++] = source[i++];
                 result[r++] = source[i++];
 
                 /* Copy whitespace */
                 while (i < source_len && (source[i] == ' ' || source[i] == '\t')) {
+                    ENSURE_CAPACITY(1);
                     result[r++] = source[i++];
                 }
 
                 /* Check for nowdoc quote */
                 int is_nowdoc = (i < source_len && source[i] == '\'');
                 if (is_nowdoc) {
+                    ENSURE_CAPACITY(1);
                     result[r++] = source[i++];
                 }
 
                 /* Copy and save the label */
                 size_t label_start = i;
                 while (i < source_len && (isalnum((unsigned char)source[i]) || source[i] == '_')) {
+                    ENSURE_CAPACITY(1);
                     result[r++] = source[i++];
                 }
                 size_t label_len = i - label_start;
@@ -152,14 +170,17 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
 
                 /* Copy closing quote if nowdoc */
                 if (is_nowdoc && i < source_len && source[i] == '\'') {
+                    ENSURE_CAPACITY(1);
                     result[r++] = source[i++];
                 }
 
                 /* Copy until newline */
                 while (i < source_len && source[i] != '\n') {
+                    ENSURE_CAPACITY(1);
                     result[r++] = source[i++];
                 }
                 if (i < source_len && source[i] == '\n') {
+                    ENSURE_CAPACITY(1);
                     result[r++] = source[i++];
                 }
 
@@ -178,6 +199,7 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
                             (i + j >= source_len || source[i+j] == ';' ||
                              source[i+j] == '\n' || source[i+j] == '\r')) {
                             /* Copy the closing label */
+                            ENSURE_CAPACITY(label_len);
                             for (size_t k = 0; k < label_len; k++) {
                                 result[r++] = source[i++];
                             }
@@ -186,6 +208,7 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
                         }
                     }
                     /* Not the end label, just copy the character */
+                    ENSURE_CAPACITY(1);
                     result[r++] = source[i++];
                 }
 
@@ -196,11 +219,14 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
 
         /* ---- Skip single-quoted strings ---- */
         if (source[i] == '\'') {
+            ENSURE_CAPACITY(1);
             result[r++] = source[i++];
             while (i < source_len) {
+                ENSURE_CAPACITY(1);
                 result[r++] = source[i];
                 if (source[i] == '\\' && i + 1 < source_len) {
                     i++;
+                    ENSURE_CAPACITY(1);
                     result[r++] = source[i];
                 } else if (source[i] == '\'') {
                     i++;
@@ -213,11 +239,14 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
 
         /* ---- Skip double-quoted strings ---- */
         if (source[i] == '"') {
+            ENSURE_CAPACITY(1);
             result[r++] = source[i++];
             while (i < source_len) {
+                ENSURE_CAPACITY(1);
                 result[r++] = source[i];
                 if (source[i] == '\\' && i + 1 < source_len) {
                     i++;
+                    ENSURE_CAPACITY(1);
                     result[r++] = source[i];
                 } else if (source[i] == '"') {
                     i++;
@@ -231,6 +260,7 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
         /* ---- Skip single-line comments // ---- */
         if (source[i] == '/' && i + 1 < source_len && source[i + 1] == '/') {
             while (i < source_len && source[i] != '\n') {
+                ENSURE_CAPACITY(1);
                 result[r++] = source[i++];
             }
             continue;
@@ -239,6 +269,7 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
         /* ---- Skip single-line comments # ---- */
         if (source[i] == '#') {
             while (i < source_len && source[i] != '\n') {
+                ENSURE_CAPACITY(1);
                 result[r++] = source[i++];
             }
             continue;
@@ -246,14 +277,17 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
 
         /* ---- Skip multi-line comments ---- */
         if (source[i] == '/' && i + 1 < source_len && source[i + 1] == '*') {
+            ENSURE_CAPACITY(2);
             result[r++] = source[i++];
             result[r++] = source[i++];
             while (i < source_len) {
                 if (source[i] == '*' && i + 1 < source_len && source[i + 1] == '/') {
+                    ENSURE_CAPACITY(2);
                     result[r++] = source[i++];
                     result[r++] = source[i++];
                     break;
                 }
+                ENSURE_CAPACITY(1);
                 result[r++] = source[i++];
             }
             continue;
@@ -345,7 +379,7 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
                 /* We already checked for < and , above, so this is safe */
 
                 /* Case 4: After colon (return type) */
-                if (look_back > 0 && result[look_back - 1] == ':' && result[look_back - 2] != ':') {
+                if (look_back > 1 && result[look_back - 1] == ':' && result[look_back - 2] != ':') {
                     is_type_context = 1;
                 }
 
@@ -396,13 +430,17 @@ static char *strip_generics(const char *source, size_t source_len, size_t *new_l
 
 
         /* Default: copy character as-is */
+        ENSURE_CAPACITY(1);
         result[r++] = source[i++];
     }
 
+    ENSURE_CAPACITY(1);
     result[r] = '\0';
     *new_len  = r;
     return result;
 }
+
+#undef ENSURE_CAPACITY
 
 /* -----------------------------------------------------------------------
  * read_file_contents()
@@ -473,8 +511,6 @@ zend_op_array *erased_generics_compile_file(zend_file_handle *file_handle, int t
     zend_string *source_str   = zend_string_init(modified, modified_len, 0);
     zend_string *filename_str = zend_string_init(filename, strlen(filename), 0);
 
-    efree(modified);
-
     zend_op_array *op_array = zend_compile_string(
         source_str,
         ZSTR_VAL(filename_str)
@@ -485,6 +521,7 @@ zend_op_array *erased_generics_compile_file(zend_file_handle *file_handle, int t
 
     zend_string_release(source_str);
     zend_string_release(filename_str);
+    efree(modified);
 
     return op_array;
 }
