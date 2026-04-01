@@ -33,6 +33,14 @@ make
 sudo make install
 ```
 
+Add `extension=erased_generics.so` to your php.ini or create a new ini file (the location is OS dependant).
+
+The extension can be loaded manually on the CLI:
+
+```
+php -d extension=/path/to/erased-generics/modules/erased_generics.so -f file.php
+```
+
 </details>
 
 
