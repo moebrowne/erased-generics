@@ -46,9 +46,9 @@ php -d extension=/path/to/erased-generics/modules/erased_generics.so -f file.php
 
 ## How It Works
 
-It's a really simple preprocessor, kind of like Typescript or SCSS but purely subtractive. Unlike TS and SCSS,
-everything is done at runtime, there is no additional compilation or things for the developer to run. A slightly more
-technical explanation: It overrides the `zend_compile_file` function (responsible for reading and compiling PHP code)
+It's a really simple transpiler, kind of like Typescript or SCSS but purely subtractive. Unlike TS and SCSS, everything
+is done at runtime. There is no additional compilation or tools the developer must run. A slightly more technical
+explanation: It overrides the `zend_compile_file` function (responsible for reading and compiling PHP code)
 with simple string parsing stripping out the generics syntax transparently hiding the generics syntax from the rest of
 the compilation process.
 
